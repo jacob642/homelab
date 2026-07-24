@@ -1,0 +1,11 @@
+[Unit]
+Description=Home directory backup on boot
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/jacob/Scripts/Backup.sh
+User=jacob
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+# Example excerpt from /etc/samba/smb.conf
+# Restricts Samba to only listen on the VirtualBox Host-Only adapter
+# and loopback, so it doesn't try to bind to the NAT or Docker interfaces.
+
+[global]
+   workgroup = WORKGROUP
+   server string = %h server (Samba, Ubuntu)
+
+   interfaces = 192.168.56.101/24 lo
+   bind interfaces only = yes
+
+[sambashare]
+   path = /home/jacob/sambashare
+   browsable = yes
+   read only = no
+   guest ok = no
+   valid users = jacob
