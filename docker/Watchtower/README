@@ -1,0 +1,3 @@
+# Watchtower
+
+Automatically updates running containers when new images are available, so I'm not manually pulling and restarting everything every time something gets an update.

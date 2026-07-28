@@ -1,0 +1,5 @@
+# Homepage
+
+Dashboard for the whole homelab, running at `http://192.168.56.101:3000`. One page with tiles for everything: Containers (Portainer, Uptime Kuma, Traefik), Servers (Nginx, Samba, SSH), and Infrastructure (Ubuntu, Windows Host, Kali).
+
+Config lives in `services.yaml` and `widgets.yaml` inside the container's config folder. Took a bit of back-and-forth editing those two files to get the tiles laid out the way I wanted.

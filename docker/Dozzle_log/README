@@ -1,0 +1,3 @@
+# Dozzle
+
+Lightweight log viewer for Docker containers. Lets me check container logs from a browser instead of `docker logs` in the terminal every time.

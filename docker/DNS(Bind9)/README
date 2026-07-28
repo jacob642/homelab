@@ -1,0 +1,9 @@
+# DNS (Bind9)
+
+Self-hosted DNS using Bind9, so devices on the homelab network can resolve internal hostnames instead of relying on raw IPs everywhere.
+
+## Problem: port 53 already in use
+
+Bind9 wouldn't start, container kept failing to bind to port 53. Turned out Ubuntu's own `systemd-resolved` runs a local DNS stub resolver on that port by default, so it was already taken before Bind9 ever got a chance to grab it. Had to sort that conflict out before Bind9 would actually come up.
+
+Also just generally fought with nano's syntax editing the zone/config files, awkward compared to a proper editor, worth remembering for next time.
