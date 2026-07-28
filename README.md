@@ -13,9 +13,15 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 - Networking: two adapters, NAT (10.0.2.15, for internet access) and Host-Only (192.168.56.101, so the Windows host can talk directly to the VM)
 - File sharing: Samba, bound to the Host-Only interface
 - Web server: nginx, serving a static homepage
-- Containers: Docker, managed through Portainer, running at `https://192.168.56.101:9443`. Just tested it out with a couple of hello-world containers so far. Plan is to add real self-hosted apps next, with nginx as a reverse proxy once there's more than one service to route to
-- Monitoring: Uptime Kuma (also in Docker), watching nginx, Portainer, the VM itself, and SSH
-- Planned next: Gitea, self-hosted, to push this repo and others to
+- Reverse proxy: Traefik, routing to the various services below
+- Containers: Docker, managed through Portainer, running at `https://192.168.56.101:9443`
+- Monitoring: Uptime Kuma, watching nginx, Portainer, the VM itself, and SSH
+- Dashboard: Homepage, a single page with tiles for everything running (containers, servers, infrastructure)
+- Logs: Dozzle, a lightweight log viewer for Docker containers
+- Container updates: Watchtower, keeps images up to date automatically
+- DNS: Bind9
+- Git: Gitea, self-hosted. Almost finished setting it up, had to pause to get the other services running first
+- Other VMs on the network: a Windows host and a Kali box, alongside the main Ubuntu VM
 
 ## What's in here
 
@@ -32,7 +38,12 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 | `nginx/default.conf.example` | nginx config for the static homepage |
 | `docker/portainer/` | Notes on the Portainer setup |
 | `docker/uptime-kuma/` | Uptime Kuma's docker-compose.yml and setup notes |
-| `docker/gitea/` | Planned, not set up yet |
+| `docker/homepage/` | Homepage dashboard config (services.yaml, widgets.yaml) |
+| `docker/traefik/` | Traefik reverse proxy config |
+| `docker/dozzle/` | Dozzle log viewer setup |
+| `docker/watchtower/` | Watchtower auto-update setup |
+| `docker/dns/` | Bind9 DNS config |
+| `docker/gitea/` | Self-hosted git, still being finished |
 | `diagrams/` | Architecture/network diagrams |
 | `screenshots/` | Screenshots referenced from this README |
 
@@ -47,6 +58,8 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 **Splitting one big script into smaller pieces.** Monitor.py used to be one long file doing everything. Now it just imports functions from network_scan.py and service_check.py, so I can test or change one piece without touching the rest.
 
 **Monitoring a container from another container.** Set up Uptime Kuma to watch Portainer, and it kept showing 0% up with a timeout error, even though Portainer was clearly running fine. Since Uptime Kuma runs in its own Docker container, `127.0.0.1` and even the VM's real IP weren't reliable ways for it to reach Portainer, container networking doesn't automatically see the outside world the same way the host does. Fixed it two ways: added `extra_hosts: host.docker.internal:host-gateway` to Uptime Kuma's docker-compose.yml so it could resolve the host machine by name, and separately found Portainer's actual container IP on the Docker bridge network (172.17.0.3) through Portainer's own container list and pointed the monitor straight at that instead. Also had to turn on "Ignore TLS/SSL errors" in the monitor settings since Portainer uses a self-signed cert, and bumped the retry count up so one slow handshake didn't get flagged as a full outage.
+
+**Port 53 was already taken.** Setting up Bind9 for DNS, the container wouldn't bind to port 53. Turned out Ubuntu runs its own local DNS resolver (systemd-resolved) on that port by default, so Bind9 was trying to grab a port that was already in use. Had to sort that out before Bind9 would actually start. Also just generally fighting nano's syntax while editing the config files, awkward to get right compared to writing in a proper editor.
 
 ## Running it
 
