@@ -1,0 +1,9 @@
+# cAdvisor
+
+Per-container resource metrics (CPU, memory, network, disk I/O), feeding Prometheus. Running at `http://192.168.56.101:8081/containers/`.
+
+## Problem: crashed on startup
+
+The compose file looked correct, valid YAML, right mounts, but the container kept dying right after starting with a Go panic (nil pointer dereference) in its Docker container-handling code. Docker itself registered fine according to the logs, cAdvisor just crashed straight after.
+
+This is a known rough edge with cAdvisor on newer Docker versions when pulling the `:latest` tag instead of a pinned release. Worth pinning to a specific version instead of `:latest` if it happens again.

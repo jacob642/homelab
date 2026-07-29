@@ -1,0 +1,3 @@
+# Prometheus
+
+Metrics backend, scraping Node-Exporter (host metrics) and cAdvisor (per-container metrics). Ties the two together into actual time series data/dashboards instead of each one just sitting there standalone.
