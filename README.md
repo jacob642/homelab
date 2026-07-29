@@ -16,7 +16,7 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 - Reverse proxy: Traefik, routing to the various services below
 - Containers: Docker, managed through Portainer, running at `https://192.168.56.101:9443`
 - Monitoring: Uptime Kuma, watching nginx, Portainer, the VM itself, and SSH
-- Metrics: Prometheus, scraping Node-Exporter (host metrics) and cAdvisor (per-container metrics)
+- Metrics: Prometheus scraping Node-Exporter (host metrics) and cAdvisor (per-container metrics), visualized in Grafana
 - Dashboard: Homepage, a single page with tiles for everything running (containers, servers, infrastructure)
 - Logs: Dozzle, a lightweight log viewer for Docker containers
 - Container updates: Watchtower, keeps images up to date automatically
@@ -46,6 +46,7 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 | `docker/node-exporter/` | Node-Exporter setup, feeds host metrics to Prometheus |
 | `docker/cadvisor/` | cAdvisor setup, feeds per-container metrics to Prometheus |
 | `docker/prometheus/` | Prometheus config, scraping Node-Exporter and cAdvisor |
+| `docker/grafana/` | Grafana dashboards for the collected metrics |
 | `diagrams/` | Architecture/network diagrams |
 | `screenshots/` | Screenshots referenced from this README |
 
@@ -66,6 +67,8 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 **cAdvisor kept crashing on startup.** The docker-compose.yml looked fine (valid YAML, all the right mounts), but the container kept dying right after starting with a Go panic (nil pointer dereference) somewhere in its Docker container-handling code. Docker itself registered fine in the logs, it just crashed straight after. Common issue with cAdvisor on newer Docker versions when it's pulling `:latest` instead of a pinned version.
 
 **Homepage dashboard icons not showing.** A few tiles on the Homepage dashboard (Samba, Ubuntu) had missing icons even though the filenames looked reasonable. Turned out the icon pack (dashboardicons.com) uses more specific names than the plain service name, `samba-server.png` instead of `samba.png`, and `ubuntu-linux.png` instead of `ubuntu.png`. Worth checking the actual site for the exact filename rather than guessing.
+
+**An imported Grafana dashboard showed "No data" everywhere.** Prometheus confirmed both cAdvisor and Node-Exporter targets were up and scraping fine, so the data existed, Grafana just wasn't showing it. First problem was the dashboard's data source variable (`${DS_PROMETHEUS}`) pointing at nothing, from importing without properly mapping it to the actual Prometheus data source. Re-importing and setting that mapping fixed the "datasource not found" error, but the panels still showed no data after that. Traced it down to the dashboard's queries depending on `$host`/`$container` template variables that weren't resolving against my actual label values, likely an older dashboard built around a different cAdvisor label convention. Rather than fight that one dashboard's variables, switched to a different community dashboard that worked out of the box.
 
 ## Running it
 

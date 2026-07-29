@@ -1,0 +1,5 @@
+# Grafana
+
+Dashboards for the metrics Prometheus is collecting from Node-Exporter and cAdvisor. Running at `http://192.168.56.101:3002`.
+
+Some imported community dashboards didn't play well with this setup (see the main README's "Problems I ran into" section), ended up switching to different ones that actually showed data.
