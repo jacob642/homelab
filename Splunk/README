@@ -1,0 +1,13 @@
+# Splunk
+
+Secondary SIEM, installed on the Windows 11 host (not the Ubuntu VM), intended to receive forwarded logs from the homelab as a second point of log analysis alongside Wazuh.
+
+## Status
+
+Installed but not operational — blocked on a license renewal. No log forwarding configured yet.
+
+## Planned next steps
+
+- [ ] Renew license
+- [ ] Configure a forwarder on the Ubuntu VM to ship logs to Splunk on the Windows host
+- [ ] Decide what's actually worth forwarding (syslog? Docker container logs? both?)

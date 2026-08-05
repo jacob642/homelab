@@ -8,7 +8,7 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 
 ## Setup
 
-- Host: Windows
+- Host: Windows 11
 - Guest: Ubuntu Server, running in VirtualBox
 - Networking: two adapters, NAT (10.0.2.15, for internet access) and Host-Only (192.168.56.101, so the Windows host can talk directly to the VM)
 - File sharing: Samba, bound to the Host-Only interface
@@ -17,10 +17,13 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 - Containers: Docker, managed through Portainer, running at `https://192.168.56.101:9443`
 - Monitoring: Uptime Kuma, watching nginx, Portainer, the VM itself, and SSH
 - Metrics: Prometheus scraping Node-Exporter (host metrics) and cAdvisor (per-container metrics), visualized in Grafana
-- Dashboard: Homepage, a single page with tiles for everything running (containers, servers, infrastructure)
-- Logs: Dozzle, a lightweight log viewer for Docker containers
+- Dashboard: Homepage, a single page with tiles for everything running (containers, services, infrastructure, security)
+- Logs: Dozzle, a lightweight log viewer for Docker containers, plus Loki and Promtail for centralized log aggregation
 - Container updates: Watchtower, keeps images up to date automatically
 - DNS: Bind9
+- Intrusion prevention: Fail2Ban (SSH) and CrowdSec (SSH, nginx, and Docker container logs), enforced at the firewall level via the CrowdSec nftables bouncer
+- SIEM / XDR: Wazuh, run on-demand rather than continuously (see Security Stack below)
+- SIEM (secondary): Splunk, installed on the Windows host, pending license renewal before use
 - Other VMs on the network: a Windows host, and a Kali box (from an earlier course, added to the same network so it's easy to reach from Ubuntu)
 
 ## What's in here
@@ -32,7 +35,7 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 | `scripts/service_check.py` | Lists running systemd services and processes in a readable table |
 | `scripts/Backup.sh` | Backs up the home directory to a dated .tgz archive, skips the backup folder itself so it doesn't back up its own backups |
 | `scripts/System_update.sh` | Runs apt update/upgrade/cleanup and a snap refresh |
-| `scripts/create_user.sh` | Creates a new Linux user, validates the username, locks the account until a password is set |
+| `scripts/create_user.sh` (aka `AddUser.sh`) | Creates a new Linux user, validates the username, locks the account until a password is set |
 | `systemd/backup.service` | Runs Backup.sh automatically on boot |
 | `samba/smb.conf.example` | Samba config, restricted to the Host-Only interface |
 | `nginx/default.conf.example` | nginx config for the static homepage |
@@ -47,8 +50,12 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 | `docker/cadvisor/` | cAdvisor setup, feeds per-container metrics to Prometheus |
 | `docker/prometheus/` | Prometheus config, scraping Node-Exporter and cAdvisor |
 | `docker/grafana/` | Grafana dashboards for the collected metrics |
+| `docker/loki/` & `docker/promtail/` | Centralized log aggregation — Promtail ships logs, Loki stores/indexes them |
+| `docker/crowdsec/` | CrowdSec config — collections, acquisition sources (SSH, nginx, Docker logs) |
+| `docker/wazuh/` | Wazuh single-node stack (indexer, manager, dashboard) — see Security Stack |
 | `diagrams/` | Architecture/network diagrams |
 | `screenshots/` | Screenshots referenced from this README |
+| `docs/` | Supporting documentation and notes |
 
 ## Problems I ran into
 
@@ -70,6 +77,78 @@ I wanted practical experience with day-to-day sysadmin work that you don't reall
 
 **An imported Grafana dashboard showed "No data" everywhere.** Prometheus confirmed both cAdvisor and Node-Exporter targets were up and scraping fine, so the data existed, Grafana just wasn't showing it. First problem was the dashboard's data source variable (`${DS_PROMETHEUS}`) pointing at nothing, from importing without properly mapping it to the actual Prometheus data source. Re-importing and setting that mapping fixed the "datasource not found" error, but the panels still showed no data after that. Traced it down to the dashboard's queries depending on `$host`/`$container` template variables that weren't resolving against my actual label values, likely an older dashboard built around a different cAdvisor label convention. Rather than fight that one dashboard's variables, switched to a different community dashboard that worked out of the box.
 
+## Security Stack
+
+The homelab runs a layered security setup: Fail2Ban and CrowdSec for active intrusion prevention, and Wazuh (plus, eventually, Splunk) for detection and log analysis. Here's how each piece came together.
+
+### CrowdSec
+
+Deployed as a Docker container, joined to the existing `homelab` network alongside Traefik, Portainer, and the rest of the stack rather than running isolated. It watches SSH (`/var/log/auth.log`), nginx access/error logs, and selected Docker container logs, using the `sshd`, `nginx`, and `linux` collections.
+
+Remediation is handled by the native `crowdsec-firewall-bouncer` (nftables), installed directly on the host rather than in a container, since it needs to manipulate the host's firewall rules. The bouncer talks to CrowdSec's Local API over a fixed port.
+
+**Port conflict:** the Local API's default port (8080) was already taken by an existing `docker-proxy` process, and the next couple of fallback ports (8081, 8082) were too. Checked with:
+```bash
+sudo ss -tulpn | grep -E '8080|8081|8082|8083'
+```
+Landed on **8083**, confirmed free, and set it consistently in both the CrowdSec `docker-compose.yml` port mapping and the bouncer's `api_url` in `/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`. These two configs have to agree, or the bouncer can't reach CrowdSec at all.
+
+**Fail2Ban overlap:** currently both Fail2Ban and CrowdSec watch SSH. Left as-is for now as defense-in-depth — worth revisiting later whether to consolidate onto one.
+
+**Status:** live and running.
+
+### Splunk
+
+Installed on the Windows 11 host, intended to receive forwarded logs from the Ubuntu VM as a second SIEM alongside Wazuh. Currently blocked on a license renewal — not yet forwarding anything.
+
+**Status:** installed, not yet operational.
+
+### Wazuh
+
+Deployed as a single-node stack (indexer, manager, dashboard) to add proper SIEM/XDR capability on top of Fail2Ban and CrowdSec's prevention layer — log analysis, file integrity monitoring, and threat detection.
+
+The deployment went through a genuine multi-layer debugging process, redeployed from scratch after an earlier instance stopped feeding its dashboard and proved hard to debug live:
+
+**Bug 1 — wrong branch, unpublished image.** The original setup was cloned from the `main` branch of the `wazuh-docker` repo, which was ahead of the actually published Docker images. `docker compose up -d` failed trying to pull `wazuh/wazuh-dashboard:5.1.0`, a tag that didn't exist on Docker Hub. Fixed by cloning a proper tagged release instead of `main`:
+```bash
+git clone https://github.com/wazuh/wazuh-docker.git -b v4.14.6 --depth=1
+```
+
+**Port conflicts on 443/445.** Both were already bound by other services on the VM. Edited `docker-compose.yml` to remap the dashboard's exposed ports (dashboard ended up on 4446) before bringing the stack up.
+
+**Bug 2 — certs were directories, not files.** Once containers were up, the dashboard showed `ERROR3099 - Server not ready yet` and couldn't find a working API connection. Manager logs showed the real cause:
+
+Filebeat — which ships alerts from the manager to the indexer — was crash-looping because several files under `config/wazuh_indexer_ssl_certs/` had somehow been created as empty **directories** instead of actual `.pem`/`.key` files. Every dashboard symptom (no API, no matching index patterns, no alerts) traced back to this one broken link in the chain. Fixed by wiping and regenerating the certs:
+```bash
+docker compose down
+sudo rm -rf config/wazuh_indexer_ssl_certs
+docker compose -f generate-indexer-certs.yml run --rm generator
+```
+
+**Bug 3 — inconsistent cert ownership.** After regenerating, all files were proper regular files, but three (`root-ca-manager.key`, `root-ca-manager.pem`, `wazuh.manager.pem`) were owned by `dnsmasq:systemd-journal` instead of `jacob:jacob` like the rest. Fixed with:
+```bash
+sudo find config/wazuh_indexer_ssl_certs -type f -exec chown jacob:jacob {} \;
+```
+
+**Indexer startup timing.** Even after both fixes, the manager briefly showed `connection refused` trying to reach the indexer on port 9200 — not a config problem, just the indexer (OpenSearch) still finishing its own startup. Waiting roughly a minute resolved it; logs flipped cleanly from `retrying until the connection is successful` to `initialized successfully` across every index, and filebeat confirmed `Connection to backoff(elasticsearch(https://wazuh.indexer:9200)) established`.
+
+**Confirmed working end-to-end:** API status Online, manager v4.14.6, dashboard fully functional, and the instance had already generated real alerts (45 medium, 142 low severity in 24 hours) purely from monitoring the manager host itself, before any agents were deployed.
+
+**Resource reality check:** running the full Wazuh stack (indexer/manager/dashboard) alongside the rest of the homelab pushed the host — 16GB RAM total, VM allocated ~10GB — to zero free memory, and separately, Wazuh's containers and volumes (the manager's container layer and the `wazuh_queue` volume in particular) consumed close to 16GB of disk space on their own. Rather than over-provision a VM sharing resources with a daily-use Windows machine, the call was made to run Wazuh **on-demand** instead of continuously, and to free the disk space once the working setup was proven and documented.
+
+**Status:** proven working end-to-end, stack currently torn down to reclaim resources. Redeploying is a known, documented process (above) rather than a fresh debugging exercise — the next run will need certs regenerated from scratch, since volumes aren't persisted between teardowns. Revisiting with dedicated hardware once budget allows, since 16GB shared between host and VM is the real ceiling here, not a configuration problem.
+
+## Homepage Dashboard
+
+The Homepage dashboard (`http://192.168.56.101:3000`) ties the whole stack together on one page, grouped into four sections:
+
+- **Containers** — Portainer, Uptime Kuma, Traefik, Dozzle, Watchtower, Node-Exporter, cAdvisor, Prometheus, Grafana
+- **Services** — nginx, Samba, SSH, Docker Engine
+- **Infrastructure** — Ubuntu, Windows Host, Kali
+- **Security** — Hardened SSH, UFW Firewall, Automated Backups, CrowdSec, Wazuh
+
+Live CPU, memory, and disk stats are shown at the top of the dashboard via its built-in system widget.
+
 ## Running it
 
 ```bash
@@ -89,9 +168,27 @@ sudo systemctl enable --now backup.service
 
 # create a new user (needs root)
 sudo ./scripts/create_user.sh
+
+# bring Wazuh back up (from a clean/reset state — will need cert regeneration, see Security Stack above)
+cd docker/wazuh/wazuh-docker/single-node
+docker compose -f generate-indexer-certs.yml run --rm generator
+sudo find config/wazuh_indexer_ssl_certs -type f -exec chown jacob:jacob {} \;
+docker compose up -d
+
+# stop Wazuh to free RAM/disk when not actively using it
+cd docker/wazuh/wazuh-docker/single-node
+docker compose stop      # keeps containers/data, releases RAM
+# docker compose down -v   # full teardown, also reclaims disk space, but requires cert regen next time
 ```
+
+## Current Status
+
+- **Active:** Fail2Ban, CrowdSec, Docker stack (Portainer, Traefik, Prometheus, Grafana, Loki/Promtail, Uptime Kuma, Dozzle, Watchtower, Bind9)
+- **On-demand (torn down when not in use):** Wazuh — indexer, manager, dashboard
+- **Blocked:** Splunk — installed, awaiting license renewal before log forwarding can be configured
 
 ## Notes
 
 - The IPs in here are private LAN/VirtualBox addresses, nothing public-facing.
 - Backup.sh and backup.service have my actual home directory path (/home/jacob) hardcoded. Change that if you're reusing this on a different machine.
+- Wazuh's data volumes are not currently persisted between teardowns — redeploying starts from a clean state and needs certs regenerated (documented above).

@@ -1,0 +1,7 @@
+# Loki
+
+Log aggregation backend — stores and indexes logs shipped by Promtail. Paired with Grafana for querying/visualizing logs alongside metrics.
+
+## Status
+
+Running as part of the Docker stack. *(Add config details, retention settings, and how it's queried from Grafana here.)*

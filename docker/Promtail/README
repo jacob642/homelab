@@ -1,0 +1,7 @@
+# Promtail
+
+Log shipping agent — reads logs on the host/containers and forwards them to Loki.
+
+## Status
+
+Running as part of the Docker stack. *(Add which logs it's tailing and its scrape config here.)*

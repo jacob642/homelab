@@ -1,0 +1,40 @@
+# CrowdSec
+
+Behavioral intrusion detection and IP blocking, running as a Docker container on the `homelab` network.
+
+## What it watches
+
+- SSH (`/var/log/auth.log`)
+- nginx access/error logs
+- Selected Docker container logs
+
+## Collections in use
+
+- `crowdsecurity/sshd`
+- `crowdsecurity/nginx`
+- `crowdsecurity/linux`
+
+## Remediation
+
+Blocking is handled by `crowdsec-firewall-bouncer` (nftables), installed natively on the host rather than in a container, since it needs direct access to the host's firewall rules. The bouncer polls CrowdSec's Local API to get the current ban list.
+
+## Ports
+
+CrowdSec's Local API runs on **8083** (not the default 8080 — that and the next two ports, 8081/8082, were already in use by other services on this host). Both the container's port mapping and the bouncer's `api_url` in `/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml` need to agree on this port.
+
+## Useful commands
+
+```bash
+docker exec crowdsec cscli metrics           # what's being parsed/detected
+docker exec crowdsec cscli decisions list    # current bans
+docker exec crowdsec cscli collections list  # confirm collections are loaded
+docker exec crowdsec cscli bouncers list     # confirm the bouncer is registered
+```
+
+## Known overlap
+
+Fail2Ban and CrowdSec both currently watch SSH. Left running side by side for now (defense-in-depth) rather than consolidated onto one.
+
+## Status
+
+Live and running.

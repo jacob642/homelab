@@ -1,0 +1,60 @@
+# Wazuh
+
+Single-node SIEM/XDR stack (indexer, manager, dashboard) for log analysis, file integrity monitoring, and threat detection.
+
+## Version
+
+Deployed from the `v4.14.6` tagged release of `wazuh-docker` — **not** the `main` branch, which was ahead of the actually published Docker images and will fail to pull (`wazuh/wazuh-dashboard:5.1.0` doesn't exist on Docker Hub).
+
+```bash
+git clone https://github.com/wazuh/wazuh-docker.git -b v4.14.6 --depth=1
+```
+
+## Ports
+
+Default ports (443, 445) were already in use on this VM. Dashboard was remapped to **4446**. Check `docker-compose.yml` for the exact current mapping before assuming defaults.
+
+## Bringing it up from a clean state
+
+Certs are not currently persisted between teardowns, so a fresh deploy needs cert generation every time:
+
+```bash
+cd wazuh-docker/single-node
+docker compose -f generate-indexer-certs.yml run --rm generator
+sudo find config/wazuh_indexer_ssl_certs -type f -exec chown jacob:jacob {} \;
+docker compose up -d
+```
+
+Give the indexer 60-90 seconds after `up -d` before expecting the manager's API to fully connect — this is normal startup time, not a fault. Watch for `connection refused` in the manager logs flipping to `initialized successfully` across each index:
+
+```bash
+docker logs single-node-wazuh.manager-1 --tail 30 -f
+```
+
+## Known issues and fixes (see main README's "Security Stack" section for full detail)
+
+1. **Wrong branch → unpublished image** — fixed by pinning to `v4.14.6`
+2. **Certs generated as empty directories instead of files** — caused filebeat to crash with `is a directory` TLS errors. Fixed by wiping `config/wazuh_indexer_ssl_certs/` and regenerating.
+3. **Inconsistent cert ownership** — three files came back owned by `dnsmasq:systemd-journal` instead of `jacob:jacob` after regeneration. Fixed with a recursive `chown`.
+
+## Resource usage
+
+This is the heaviest thing in the homelab by far:
+- Pushed a 16GB host (with ~10GB allocated to the VM) to 0 free RAM when run alongside everything else
+- Consumed close to 16GB of disk on its own (mostly the manager's container layer and the `wazuh_queue` volume)
+
+## Operating model
+
+Run **on-demand**, not continuously:
+
+```bash
+docker compose stop    # releases RAM, keeps containers/data intact
+docker compose start   # brings it back up without rebuilding
+
+# OR, to also reclaim disk space (requires cert regen on next deploy):
+docker compose down -v
+```
+
+## Status
+
+Proven working end-to-end — API Online, v4.14.6, generating real alerts (45 medium / 142 low in 24h with zero agents deployed) before being torn down to reclaim resources. Revisiting with dedicated hardware when budget allows.
